@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Gate Security Portal - Campus Lost & Found</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 min-h-screen pb-12">
+  <nav class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shadow">
+    <div class="font-bold text-lg">🛡️ Gate Security Lost & Found Desk</div>
+    <div class="flex items-center gap-4 text-sm">
+      <span>Guard: <strong>{{ user.name }}</strong> ({{ user.user_id }})</span>
+      <a href="/logout" class="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded">Logout</a>
+    </div>
+  </nav>
+
+  <div class="max-w-6xl mx-auto px-4 mt-6 space-y-6">
+    <!-- Constant Search Bar Across All 3 Guard Tabs -->
+    <form action="/guard" method="GET" class="flex gap-2">
+      <input type="hidden" name="tab" value="{{ active_tab }}">
+      <input type="text" name="q" value="{{ q }}" placeholder="Search Tracking ID (e.g. LF-1001), Object, Color, or Location..."
+             class="flex-1 bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm shadow-sm">
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2.5 rounded-lg text-sm">
+        Search
+      </button>
+      {% if q %}
+        <a href="/guard?tab={{ active_tab }}" class="bg-slate-300 hover:bg-slate-400 text-slate-800 font-semibold px-4 py-2.5 rounded-lg text-sm flex items-center">Clear</a>
+      {% endif %}
+    </form>
+
+    <!-- 3 Separate Guard Portal Tabs -->
+    <div class="flex flex-wrap gap-2 border-b border-slate-300 pb-3">
+      <a href="/guard?tab=pending{% if q %}&q={{ q }}{% endif %}"
+         class="px-5 py-2.5 rounded-lg text-sm font-semibold {{ 'bg-amber-600 text-white shadow' if active_tab == 'pending' else 'bg-white text-slate-700 hover:bg-slate-200' }}">
+        1. Pending Drop-Off ({{ pending_items|length }})
+      </a>
+      <a href="/guard?tab=at_gate{% if q %}&q={{ q }}{% endif %}"
+         class="px-5 py-2.5 rounded-lg text-sm font-semibold {{ 'bg-emerald-600 text-white shadow' if active_tab == 'at_gate' else 'bg-white text-slate-700 hover:bg-slate-200' }}">
+        2. At the Gate ({{ at_gate_items|length }})
+      </a>
+      <a href="/guard?tab=claimed{% if q %}&q={{ q }}{% endif %}"
+         class="px-5 py-2.5 rounded-lg text-sm font-semibold {{ 'bg-slate-800 text-white shadow' if active_tab == 'claimed' else 'bg-white text-slate-700 hover:bg-slate-200' }}">
+        3. Claimed Archive ({{ claimed_items|length }})
+      </a>
+    </div>
+
+    <!-- TAB 1: PENDING DROP-OFF -->
+    {% if active_tab == 'pending' %}
+    <div class="bg-white p-6 rounded-xl shadow border-t-4 border-amber-500">
+      <h2 class="text-lg font-bold text-slate-800 mb-1">Pending Drop-Off</h2>
+      <p class="text-xs text-slate-500 mb-4">Items reported online—verify and mark submitted when the finder hands the physical item over at the gate.</p>
+      {% if pending_items|length == 0 %}
+        <p class="text-sm text-slate-400 py-6 text-center">No pending drop-offs found.</p>
+      {% else %}
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {% for item in pending_items %}
+          <div class="border rounded-lg p-3 bg-amber-50/40 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between font-bold text-sm mb-1">
+                <span>{{ item.color }} {{ item.object_name }}</span>
+                <span class="text-blue-700 font-mono">{{ item.tracking_code }}</span>
+              </div>
+              <img src="{{ item.image_path }}" class="w-full h-36 object-cover rounded mb-2">
+              <p class="text-xs text-slate-600">Found at: {{ item.location }} {% if item.spot_note %}({{ item.spot_note }}){% endif %}</p>
+              <p class="text-xs text-slate-500">Reported by ID: {{ item.finder_id }} at {{ item.found_date }}</p>
+            </div>
+            <form action="/guard/receive/{{ item.id }}" method="POST" class="mt-3">
+              <button type="submit" class="w-full bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold py-2 rounded">
+                ✓ Mark as Submitted to Gate
+              </button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- TAB 2: AT THE GATE -->
+    {% if active_tab == 'at_gate' %}
+    <div class="bg-white p-6 rounded-xl shadow border-t-4 border-emerald-600">
+      <h2 class="text-lg font-bold text-slate-800 mb-1">At the Gate (Ready for Claim)</h2>
+      <p class="text-xs text-slate-500 mb-4">Items physically stored at the gate. Verify the student's ID offline, then enter their Name & Enrollment ID below.</p>
+      {% if at_gate_items|length == 0 %}
+        <p class="text-sm text-slate-400 py-6 text-center">No items currently at the gate.</p>
+      {% else %}
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {% for item in at_gate_items %}
+          <div class="border rounded-lg p-3 bg-emerald-50/30 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between font-bold text-sm mb-1">
+                <span>{{ item.color }} {{ item.object_name }}</span>
+                <span class="text-blue-700 font-mono">{{ item.tracking_code }}</span>
+              </div>
+              <img src="{{ item.image_path }}" class="w-full h-36 object-cover rounded mb-2">
+              <p class="text-xs text-slate-600">Location: {{ item.location }} {% if item.spot_note %}({{ item.spot_note }}){% endif %}</p>
+              <p class="text-xs text-slate-500 mb-3">{{ item.description }}</p>
+            </div>
+            <form action="/guard/claim/{{ item.id }}" method="POST" class="space-y-2 border-t pt-2">
+              <input type="text" name="claimed_by_name" required placeholder="Claimant Full Name"
+                     class="w-full border rounded px-2 py-1.5 text-xs">
+              <input type="text" name="claimed_by_id" required placeholder="Claimant Enrollment ID"
+                     class="w-full border rounded px-2 py-1.5 text-xs">
+              <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 rounded">
+                Mark as Claimed
+              </button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- TAB 3: CLAIMED ARCHIVE -->
+    {% if active_tab == 'claimed' %}
+    <div class="bg-white p-6 rounded-xl shadow border-t-4 border-slate-600">
+      <h2 class="text-lg font-bold text-slate-800 mb-3">Claimed Archive</h2>
+      {% if claimed_items|length == 0 %}
+        <p class="text-sm text-slate-400 py-6 text-center">No claimed items found.</p>
+      {% else %}
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr class="border-b bg-slate-50 text-slate-600">
+                <th class="p-2.5">Tracking ID</th>
+                <th class="p-2.5">Item</th>
+                <th class="p-2.5">Found At</th>
+                <th class="p-2.5">Claimed By (Name & ID)</th>
+                <th class="p-2.5">Claimed Time</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y">
+              {% for item in claimed_items %}
+              <tr>
+                <td class="p-2.5 font-mono font-bold text-blue-700">{{ item.tracking_code }}</td>
+                <td class="p-2.5">{{ item.color }} {{ item.object_name }}</td>
+                <td class="p-2.5">{{ item.location }}</td>
+                <td class="p-2.5 font-semibold">{{ item.claimed_by_name }} ({{ item.claimed_by_id }})</td>
+                <td class="p-2.5 text-slate-500">{{ item.claimed_at }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+  </div>
+</body>
+</html>

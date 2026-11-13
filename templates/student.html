@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Student Portal - Campus Lost & Found</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 min-h-screen pb-12">
+  <!-- Clean Top Navbar -->
+  <nav class="bg-blue-700 text-white px-6 py-4 flex flex-wrap justify-between items-center shadow gap-4">
+    <div class="font-bold text-lg">Campus Lost & Found</div>
+    <div class="flex items-center gap-4 text-sm">
+      <span>Welcome, <strong>{{ user.name }}</strong> ({{ user.user_id }})</span>
+      <a href="/logout" class="bg-blue-900 hover:bg-blue-800 px-3 py-1 rounded">Logout</a>
+    </div>
+  </nav>
+
+  <div class="max-w-6xl mx-auto px-4 mt-6 space-y-6">
+
+    <!-- 4 Separate Portal Tabs -->
+    <div class="flex flex-wrap gap-2 border-b border-slate-300 pb-3">
+      <a href="/student?tab=found"
+         class="px-5 py-2.5 rounded-lg text-sm font-semibold {{ 'bg-blue-600 text-white shadow' if active_tab == 'found' else 'bg-white text-slate-700 hover:bg-slate-200' }}">
+        📸 Found an Item
+      </a>
+      <a href="/student?tab=lost"
+         class="px-5 py-2.5 rounded-lg text-sm font-semibold {{ 'bg-indigo-600 text-white shadow' if active_tab == 'lost' else 'bg-white text-slate-700 hover:bg-slate-200' }}">
+        🔍 Lost an Item
+      </a>
+      <a href="/student?tab=requests"
+         class="px-5 py-2.5 rounded-lg text-sm font-semibold {{ 'bg-emerald-600 text-white shadow' if active_tab == 'requests' else 'bg-white text-slate-700 hover:bg-slate-200' }}">
+        📋 My Lost Requests & Matches ({{ total_matches_count }})
+      </a>
+      <a href="/student?tab=all"
+         class="px-5 py-2.5 rounded-lg text-sm font-semibold {{ 'bg-slate-800 text-white shadow' if active_tab == 'all' else 'bg-white text-slate-700 hover:bg-slate-200' }}">
+        🏫 All Unclaimed ({{ all_items|length }})
+      </a>
+    </div>
+
+    <!-- TAB 1: FOUND AN ITEM PORTAL + MY FOUND SUBMISSIONS -->
+    {% if active_tab == 'found' %}
+      <div class="space-y-8">
+        {% if draft %}
+        <div class="bg-emerald-50 border-2 border-emerald-500 p-6 rounded-xl shadow max-w-3xl mx-auto">
+          <h2 class="text-lg font-bold text-emerald-900 mb-1">✨ AI Auto-Detection Draft (Confirm & Publish)</h2>
+          <p class="text-xs text-emerald-700 mb-4">Verify the AI-detected details below before publishing to the gate feed.</p>
+          <form action="/student/publish" method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex flex-col items-center justify-center bg-white p-3 rounded-lg border">
+              <img src="{{ draft.image_path }}" alt="Uploaded Preview" class="max-h-52 rounded">
+              <span class="text-xs text-slate-400 mt-2">Auto-blurred if ID/screen detected</span>
+            </div>
+            <div class="space-y-3">
+              <input type="hidden" name="image_path" value="{{ draft.image_path }}">
+              <input type="hidden" name="found_date" value="{{ draft.found_date }}">
+              <div>
+                <label class="text-xs font-bold text-slate-700">Detected Object (Edit if wrong)</label>
+                <input type="text" name="object_name" value="{{ draft.object_name }}" required class="w-full border rounded px-3 py-1.5 text-sm">
+              </div>
+              <div>
+                <label class="text-xs font-bold text-slate-700">Detected Color (Edit if wrong)</label>
+                <input type="text" name="color" value="{{ draft.color }}" required class="w-full border rounded px-3 py-1.5 text-sm">
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-xs font-bold text-slate-700">Location</label>
+                  <input type="text" name="location" value="{{ draft.location }}" readonly class="w-full bg-slate-100 border rounded px-3 py-1.5 text-sm">
+                </div>
+                <div>
+                  <label class="text-xs font-bold text-slate-700">Floor / Spot Note</label>
+                  <input type="text" name="spot_note" value="{{ draft.spot_note }}" class="w-full border rounded px-3 py-1.5 text-sm">
+                </div>
+              </div>
+              <div>
+                <label class="text-xs font-bold text-slate-700">AI Description</label>
+                <input type="text" name="description" value="{{ draft.description }}" class="w-full border rounded px-3 py-1.5 text-sm">
+              </div>
+              <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-lg">
+                Confirm & Submit to Gate
+              </button>
+            </div>
+          </form>
+        </div>
+        {% else %}
+        <div class="bg-white p-8 rounded-xl shadow max-w-xl mx-auto border-t-4 border-blue-600">
+          <h2 class="text-xl font-bold text-slate-800 mb-1">📸 Report a Found Item</h2>
+          <p class="text-xs text-slate-500 mb-5">Snap or upload a photo—AI will automatically detect the object, color, and blur sensitive info.</p>
+          <form action="/student/analyze" method="POST" enctype="multipart/form-data" class="space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700">Upload / Take Photo</label>
+              <input type="file" name="photo" accept="image/*" capture="environment" required class="mt-1 w-full text-sm border rounded-lg p-2 bg-slate-50">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700">Where did you find it?</label>
+              <select name="location" required class="mt-1 w-full border rounded-lg px-3 py-2 text-sm">
+                {% for loc in locations %}
+                  <option value="{{ loc }}">{{ loc }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700">Floor / Specific Spot (Optional)</label>
+              <input type="text" name="spot_note" placeholder="e.g. 7th floor, behind hostel, near entrance"
+                     class="mt-1 w-full border rounded-lg px-3 py-2 text-sm">
+            </div>
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg text-sm">
+              Analyze Photo with AI
+            </button>
+          </form>
+        </div>
+        {% endif %}
+
+        <!-- Finder's Personal Drop-Off & Claim Status Tracker -->
+        <div class="bg-white p-6 rounded-xl shadow border-t-4 border-slate-700">
+          <h3 class="text-lg font-bold text-slate-800 mb-1">📦 My Found Submissions ({{ my_found_items|length }})</h3>
+          <p class="text-xs text-slate-500 mb-4">Track items you reported—show the <strong>Tracking ID (LF-XXXX)</strong> when dropping off at the Main Gate.</p>
+
+          {% if my_found_items|length == 0 %}
+            <p class="text-xs text-slate-400 py-4 text-center">You haven't reported any found items yet.</p>
+          {% else %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {% for item in my_found_items %}
+              <div class="border rounded-xl overflow-hidden bg-slate-50 flex flex-col">
+                <img src="{{ item.image_path }}" class="w-full h-36 object-cover">
+                <div class="p-3.5 text-xs space-y-1.5 flex-1">
+                  <div class="flex justify-between items-center">
+                    <span class="font-bold text-sm text-slate-800">{{ item.color }} {{ item.object_name }}</span>
+                    <span class="font-mono font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">{{ item.tracking_code }}</span>
+                  </div>
+                  <p class="text-slate-600">📍 {{ item.location }} {% if item.spot_note %}({{ item.spot_note }}){% endif %}</p>
+                  <p class="text-slate-500">🕒 Reported: {{ item.found_date }}</p>
+
+                  <div class="pt-2">
+                    {% if item.status == 'Pending Drop-Off' %}
+                      <span class="inline-block px-2.5 py-1 rounded font-bold bg-amber-100 text-amber-800">
+                        ⏳ Pending Drop-Off at Gate
+                      </span>
+                    {% elif item.status == 'At the Gate' %}
+                      <span class="inline-block px-2.5 py-1 rounded font-bold bg-emerald-100 text-emerald-800">
+                        🛡️ At the Gate (Awaiting Pickup)
+                      </span>
+                    {% elif item.status == 'Claimed' %}
+                      <span class="inline-block px-2.5 py-1 rounded font-bold bg-blue-100 text-blue-800">
+                        ✓ Has Been Claimed by Owner
+                      </span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- TAB 2: LOST AN ITEM PORTAL -->
+    {% if active_tab == 'lost' %}
+    <div class="bg-white p-8 rounded-xl shadow max-w-xl mx-auto border-t-4 border-indigo-600">
+      <h2 class="text-xl font-bold text-slate-800 mb-1">🔍 Report a Lost Item</h2>
+      <p class="text-xs text-slate-500 mb-5">Submit your lost item details—any matching items will appear in priority order under <strong>My Lost Requests & Matches</strong>.</p>
+      <form action="/student/search" method="POST" class="space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700">Object Name</label>
+            <input type="text" name="object_name" required placeholder="e.g. Phone, Water Bottle"
+                   class="mt-1 w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700">Color</label>
+            <input type="text" name="color" required placeholder="e.g. Black, Silver"
+                   class="mt-1 w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700">Last Seen Location</label>
+            <select name="location" required class="mt-1 w-full border rounded-lg px-3 py-2 text-sm">
+              {% for loc in locations %}
+                <option value="{{ loc }}">{{ loc }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700">Date Lost</label>
+            <input type="date" name="lost_date" required class="mt-1 w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700">Floor / Specific Spot (Optional)</label>
+          <input type="text" name="spot_note" placeholder="e.g. 7th floor, near Gate 1"
+                 class="mt-1 w-full border rounded-lg px-3 py-2 text-sm">
+        </div>
+        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-lg text-sm">
+          Search & Save Lost Request
+        </button>
+      </form>
+    </div>
+    {% endif %}
+
+    <!-- TAB 3: MY LOST REQUESTS & PRIORITY MATCHES (PER ITEM ROW) -->
+    {% if active_tab == 'requests' %}
+    <div class="space-y-6">
+      {% if requests_with_matches|length == 0 %}
+        <div class="bg-white p-8 rounded-xl shadow text-center text-sm text-slate-500">
+          You haven't submitted any lost requests yet. Go to <strong>Lost an Item</strong> to create one.
+        </div>
+      {% else %}
+        {% for entry in requests_with_matches %}
+        {% set req = entry.request %}
+        {% set status = entry.effective_status %}
+        {% set claimed_item = entry.claimed_item %}
+        {% set matches = entry.matches %}
+
+        <div class="bg-white p-6 rounded-xl shadow border-t-4 {{ 'border-blue-600' if status == 'Claimed' else ('border-emerald-600' if status == 'Active' else 'border-slate-400') }}">
+          <div class="flex flex-wrap justify-between items-center gap-2 pb-4 border-b">
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 class="text-lg font-bold text-slate-800">{{ req.color }} {{ req.object_name }}</h2>
+                {% if status == 'Claimed' %}
+                  <span class="text-xs px-2.5 py-0.5 rounded-full font-bold bg-blue-100 text-blue-800">
+                    ✓ Claimed at Gate
+                  </span>
+                {% elif status == 'Active' %}
+                  <span class="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-800">
+                    Active
+                  </span>
+                {% else %}
+                  <span class="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-slate-200 text-slate-600">
+                    Canceled
+                  </span>
+                {% endif %}
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Last seen at <strong>{{ req.location }}</strong> {% if req.spot_note %}({{ req.spot_note }}){% endif %} on <strong>{{ req.lost_date }}</strong>
+              </p>
+            </div>
+
+            {% if status == 'Active' %}
+            <form action="/student/cancel_request/{{ req.id }}" method="POST">
+              <button type="submit" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1.5 rounded-lg font-semibold">
+                Cancel Request
+              </button>
+            </form>
+            {% endif %}
+          </div>
+
+          {% if status == 'Claimed' and claimed_item %}
+            <div class="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3.5 text-xs text-blue-900 flex flex-wrap justify-between items-center gap-2">
+              <div>
+                <strong>Already Claimed:</strong> You collected this item (Tracking ID: <span class="font-mono font-bold">{{ claimed_item.tracking_code }}</span>) at the Main Gate.
+              </div>
+              <span class="text-blue-700">Claimed on {{ claimed_item.claimed_at }}</span>
+            </div>
+
+          {% elif status == 'Active' %}
+            <div class="mt-4">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+                Priority-Ranked Matches ({{ matches|length }})
+              </h3>
+              {% if matches|length == 0 %}
+                <p class="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg">
+                  No matches found yet after {{ req.lost_date }}. Matching items uploaded later will appear right here in priority order.
+                </p>
+              {% else %}
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {% for tier_num, badge, item in matches %}
+                  <div class="border rounded-xl overflow-hidden bg-slate-50 shadow-sm flex flex-col">
+                    <div class="bg-indigo-600 text-white text-xs font-bold px-3 py-1.5">
+                      {{ badge }}
+                    </div>
+                    <img src="{{ item.image_path }}" class="w-full h-40 object-cover">
+                    <div class="p-3 text-xs space-y-1 flex-1">
+                      <div class="flex justify-between items-center">
+                        <span class="font-bold text-sm text-slate-800">{{ item.color }} {{ item.object_name }}</span>
+                        <span class="font-mono font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">{{ item.tracking_code }}</span>
+                      </div>
+                      <p class="text-slate-600">📍 {{ item.location }} {% if item.spot_note %}({{ item.spot_note }}){% endif %}</p>
+                      <p class="text-slate-500">🕒 {{ item.found_date }}</p>
+                      <div class="pt-1">
+                        <span class="px-2 py-0.5 rounded font-semibold {{ 'bg-emerald-100 text-emerald-800' if item.status == 'At the Gate' else 'bg-amber-100 text-amber-800' }}">
+                          {{ item.status }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- TAB 4: ALL UNCLAIMED ITEMS (WITH SEARCH BAR) -->
+    {% if active_tab == 'all' %}
+    <div class="bg-white p-6 rounded-xl shadow border-t-4 border-slate-800 space-y-4">
+      <div class="flex flex-wrap justify-between items-center gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-slate-800">🏫 All Unclaimed Campus Items</h2>
+          <p class="text-xs text-slate-500">Spot yours? Note the <strong>Tracking ID (LF-XXXX)</strong> and visit the Main Gate with your ID card.</p>
+        </div>
+        <form action="/student" method="GET" class="flex gap-2 w-full md:w-auto">
+          <input type="hidden" name="tab" value="all">
+          <input type="text" name="q" value="{{ q }}" placeholder="Search LF-1001, Bottle, E Block..."
+                 class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-full md:w-64">
+          <button type="submit" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-4 py-1.5 rounded-lg">
+            Search
+          </button>
+          {% if q %}
+            <a href="/student?tab=all" class="bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center">Clear</a>
+          {% endif %}
+        </form>
+      </div>
+
+      {% if all_items|length == 0 %}
+        <p class="text-sm text-slate-500 py-6 text-center">No unclaimed items match your view.</p>
+      {% else %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          {% for item in all_items %}
+          <div class="border rounded-lg overflow-hidden bg-slate-50 flex flex-col">
+            <img src="{{ item.image_path }}" class="w-full h-40 object-cover">
+            <div class="p-3 text-xs space-y-1 flex-1">
+              <div class="flex justify-between items-center">
+                <span class="font-bold text-sm text-slate-800">{{ item.color }} {{ item.object_name }}</span>
+                <span class="font-mono font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">{{ item.tracking_code }}</span>
+              </div>
+              <p class="text-slate-600">📍 {{ item.location }} {% if item.spot_note %}({{ item.spot_note }}){% endif %}</p>
+              <p class="text-slate-500">🕒 {{ item.found_date }}</p>
+              <p class="text-slate-600 italic">{{ item.description }}</p>
+              <div class="pt-1">
+                <span class="px-2 py-0.5 rounded font-semibold {{ 'bg-emerald-100 text-emerald-800' if item.status == 'At the Gate' else 'bg-amber-100 text-amber-800' }}">
+                  {{ item.status }}
+                </span>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+  </div>
+</body>
+</html>
