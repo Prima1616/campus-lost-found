@@ -1,88 +1,109 @@
 import cv2
 import numpy as np
-
-COLOR_MAP = {
-    "Black": (25, 25, 25),
-    "White": (235, 235, 235),
-    "Grey": (128, 128, 128),
-    "Red": (200, 40, 40),
-    "Blue": (40, 80, 200),
-    "Green": (40, 160, 70),
-    "Yellow": (230, 210, 50),
-    "Brown": (130, 80, 45),
-    "Pink": (230, 130, 170),
-    "Purple": (130, 60, 170),
-    "Orange": (235, 130, 40),
-}
+from PIL import Image, ImageFilter
 
 
-def get_closest_color(rgb):
-    r, g, b = rgb
-    min_dist = float("inf")
-    closest = "Black"
-    for name, (cr, cg, cb) in COLOR_MAP.items():
-        dist = (r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2
-        if dist < min_dist:
-            min_dist = dist
-            closest = name
-    return closest
+def detect_dominant_color(bgr_crop):
+    """Detects dominant human-readable color from the center crop of the object."""
+    hsv = cv2.cvtColor(bgr_crop, cv2.COLOR_BGR2HSV)
+    h, s, v = cv2.split(hsv)
+
+    mean_s = float(np.mean(s))
+    mean_v = float(np.mean(v))
+
+    # Achromatic colors (Black, White, Silver/Grey)
+    if mean_s < 45:
+        if mean_v < 65:
+            return "Black"
+        elif mean_v > 185:
+            return "White"
+        else:
+            return "Silver"
+
+    # Chromatic colors via Hue histogram
+    hue_vals = h[s >= 45]
+    if len(hue_vals) == 0:
+        return "Grey"
+
+    median_h = float(np.median(hue_vals))
+    if median_h < 10 or median_h >= 170:
+        return "Red"
+    elif 10 <= median_h < 25:
+        return "Orange"
+    elif 25 <= median_h < 35:
+        return "Yellow"
+    elif 35 <= median_h < 85:
+        return "Green"
+    elif 85 <= median_h < 130:
+        return "Blue"
+    elif 130 <= median_h < 170:
+        return "Purple"
+    return "Multi-color"
 
 
-def analyze_and_blur_image(input_path: str, output_path: str):
+def analyze_and_blur_image(raw_path: str, pub_path: str):
     """
-    1. Detects dominant center color.
-    2. Guesses object category from aspect ratio/edges.
-    3. Applies privacy blur if rectangular card/screen or face is detected.
+    1. Detects main foreground object bounding box, aspect ratio, and relative area.
+    2. Classifies common campus items (Water Bottle, Mobile Phone, Earbuds, Textbook, ID Card, Bag).
+    3. Applies Gaussian privacy blur over sensitive card/screen regions before saving public image.
     """
-    img = cv2.imread(input_path)
-    if img is None:
-        return "Unknown Item", "Black", "Item found on campus."
+    img_bgr = cv2.imread(raw_path)
+    if img_bgr is None:
+        return "Unknown Item", "Grey", "Item spotted on campus."
 
-    h, w, _ = img.shape
+    height, width = img_bgr.shape[:2]
+    total_area = float(height * width)
 
-    # 1. Center crop for dominant color (ignores background floor/table)
-    ch1, ch2 = int(h * 0.3), int(h * 0.7)
-    cw1, cw2 = int(w * 0.3), int(w * 0.7)
-    center_crop = img[ch1:ch2, cw1:cw2]
-    avg_bgr = np.mean(center_crop.reshape(-1, 3), axis=0)
-    avg_rgb = (int(avg_bgr[2]), int(avg_bgr[1]), int(avg_bgr[0]))
-    detected_color = get_closest_color(avg_rgb)
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
+    edges = cv2.Canny(blurred, 40, 140)
+    dilated = cv2.dilate(edges, np.ones((5, 5), np.uint8), iterations=2)
 
-    # 2. Basic object guess via contour aspect ratio
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blurred, 50, 150)
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    detected_object = "Personal Item"
-    privacy_sensitive = False
-
+    # Default center crop if no clear outer contour is isolated
+    x, y, w, h = int(width * 0.2), int(height * 0.2), int(width * 0.6), int(height * 0.6)
     if contours:
         largest = max(contours, key=cv2.contourArea)
-        x, y, bw, bh = cv2.boundingRect(largest)
-        aspect = bw / float(bh) if bh > 0 else 1.0
+        if cv2.contourArea(largest) > total_area * 0.02:
+            x, y, w, h = cv2.boundingRect(largest)
 
-        if 0.45 <= aspect <= 0.65:
-            detected_object = "Phone"
-            privacy_sensitive = True
-        elif 1.35 <= aspect <= 1.75:
-            detected_object = "ID Card / Wallet"
-            privacy_sensitive = True
-        elif aspect < 0.45:
-            detected_object = "Water Bottle"
-        elif 0.7 <= aspect <= 1.3:
-            detected_object = "Bag / Notebook"
+    # Extract inner 60% of bounding box to avoid background color bleed
+    cx1 = max(0, x + int(w * 0.2))
+    cy1 = max(0, y + int(h * 0.2))
+    cx2 = min(width, x + int(w * 0.8))
+    cy2 = min(height, y + int(h * 0.8))
+    crop = img_bgr[cy1:cy2, cx1:cx2] if (cx2 > cx1 and cy2 > cy1) else img_bgr
 
-    # 3. Apply privacy blur if sensitive (ID card or phone lockscreen)
-    public_img = img.copy()
-    if privacy_sensitive:
-        # Lightly blur center text/screen area while keeping color & shape recognizable
-        roi = public_img[int(h * 0.2):int(h * 0.8), int(w * 0.2):int(w * 0.8)]
-        roi_blurred = cv2.GaussianBlur(roi, (51, 51), 30)
-        public_img[int(h * 0.2):int(h * 0.8), int(w * 0.2):int(w * 0.8)] = roi_blurred
-        description = f"{detected_color} {detected_object} (sensitive screen/details auto-blurred for privacy)."
+    color = detect_dominant_color(crop)
+
+    aspect_ratio = w / float(h) if h > 0 else 1.0
+    area_ratio = (w * h) / total_area
+    needs_privacy_blur = False
+
+    # Heuristic classification tuned for common campus items
+    if aspect_ratio < 0.52:
+        object_name = "Water Bottle"
+    elif 0.52 <= aspect_ratio <= 0.68:
+        object_name = "Mobile Phone"
+        needs_privacy_blur = True
+    elif 0.80 <= aspect_ratio <= 1.25 and area_ratio < 0.28:
+        object_name = "Earbuds"
+    elif 1.35 <= aspect_ratio <= 1.75 and area_ratio < 0.30:
+        object_name = "ID Card / Wallet"
+        needs_privacy_blur = True
+    elif area_ratio >= 0.38:
+        object_name = "Backpack / Bag"
     else:
-        description = f"{detected_color} {detected_object} spotted on campus."
+        object_name = "Textbook"
 
-    cv2.imwrite(output_path, public_img)
-    return detected_object, detected_color, description
+    # Privacy-first sensitive region blurring
+    pil_img = Image.open(raw_path).convert("RGB")
+    if needs_privacy_blur:
+        box = (x, y, min(width, x + w), min(height, y + h))
+        region = pil_img.crop(box).filter(ImageFilter.GaussianBlur(radius=14))
+        pil_img.paste(region, box)
+
+    pil_img.save(pub_path)
+    description = f"{color} {object_name} spotted on campus."
+    return object_name, color, description
